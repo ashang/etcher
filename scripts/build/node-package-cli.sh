@@ -19,56 +19,52 @@
 set -u
 set -e
 
-OS=$(uname -o 2>/dev/null || true)
-if [[ "$OS" != "Msys" ]]; then
-  echo "This script is only meant to be run in Windows" 1>&2
-  exit 1
-fi
-
 ./scripts/build/check-dependency.sh upx
-./scripts/build/check-dependency.sh unzip
 
 function usage() {
   echo "Usage: $0"
   echo ""
   echo "Options"
   echo ""
-  echo "    -p <electron package>"
   echo "    -n <application name>"
+  echo "    -e <application entry point (.js)>"
+  echo "    -l <node_modules directory>"
+  echo "    -r <architecture>"
+  echo "    -s <operating system (linux|darwin|win32)>"
   echo "    -d <application description>"
   echo "    -v <application version>"
   echo "    -c <application copyright>"
-  echo "    -l <application license file>"
   echo "    -m <company name>"
-  echo "    -a <application asar (.asar)>"
   echo "    -i <application icon (.ico)>"
   echo "    -w <download directory>"
   echo "    -o <output directory>"
   exit 1
 }
 
-ARGV_ELECTRON_PACKAGE=""
 ARGV_APPLICATION_NAME=""
+ARGV_ENTRY_POINT=""
+ARGV_NODE_MODULES=""
+ARGV_ARCHITECTURE=""
+ARGV_OPERATING_SYSTEM=""
 ARGV_APPLICATION_DESCRIPTION=""
 ARGV_VERSION=""
 ARGV_COPYRIGHT=""
-ARGV_LICENSE=""
 ARGV_COMPANY_NAME=""
-ARGV_ASAR=""
 ARGV_ICON=""
 ARGV_DOWNLOAD_DIRECTORY=""
 ARGV_OUTPUT=""
 
-while getopts ":p:n:d:v:c:l:m:a:i:w:o:" option; do
+while getopts ":n:e:l:r:s:d:v:c:m:i:w:o:" option; do
   case $option in
-    p) ARGV_ELECTRON_PACKAGE="$OPTARG" ;;
     n) ARGV_APPLICATION_NAME="$OPTARG" ;;
+    e) ARGV_ENTRY_POINT="$OPTARG" ;;
+    l) ARGV_NODE_MODULES="$OPTARG" ;;
+    r) ARGV_ARCHITECTURE="$OPTARG" ;;
+    s) ARGV_OPERATING_SYSTEM="$OPTARG" ;;
     d) ARGV_APPLICATION_DESCRIPTION="$OPTARG" ;;
     v) ARGV_VERSION="$OPTARG" ;;
     c) ARGV_COPYRIGHT="$OPTARG" ;;
-    l) ARGV_LICENSE="$OPTARG" ;;
     m) ARGV_COMPANY_NAME="$OPTARG" ;;
-    a) ARGV_ASAR="$OPTARG" ;;
     i) ARGV_ICON="$OPTARG" ;;
     w) ARGV_DOWNLOAD_DIRECTORY="$OPTARG" ;;
     o) ARGV_OUTPUT="$OPTARG" ;;
@@ -76,42 +72,53 @@ while getopts ":p:n:d:v:c:l:m:a:i:w:o:" option; do
   esac
 done
 
-if [ -z "$ARGV_ELECTRON_PACKAGE" ] \
-  || [ -z "$ARGV_APPLICATION_NAME" ] \
+if [ -z "$ARGV_APPLICATION_NAME" ] \
+  || [ -z "$ARGV_ENTRY_POINT" ] \
+  || [ -z "$ARGV_NODE_MODULES" ] \
+  || [ -z "$ARGV_ARCHITECTURE" ] \
+  || [ -z "$ARGV_OPERATING_SYSTEM" ] \
   || [ -z "$ARGV_APPLICATION_DESCRIPTION" ] \
   || [ -z "$ARGV_VERSION" ] \
   || [ -z "$ARGV_COPYRIGHT" ] \
-  || [ -z "$ARGV_LICENSE" ] \
   || [ -z "$ARGV_COMPANY_NAME" ] \
-  || [ -z "$ARGV_ASAR" ] \
   || [ -z "$ARGV_ICON" ] \
   || [ -z "$ARGV_DOWNLOAD_DIRECTORY" ] \
-  || [ -z "$ARGV_OUTPUT" ]
-then
+  || [ -z "$ARGV_OUTPUT" ]; then
   usage
 fi
 
-unzip "$ARGV_ELECTRON_PACKAGE" -d "$ARGV_OUTPUT"
+mkdir "$ARGV_OUTPUT"
+cp "$ARGV_ENTRY_POINT" "$ARGV_OUTPUT/index.js"
 
-mv "$ARGV_OUTPUT/electron.exe" "$ARGV_OUTPUT/$ARGV_APPLICATION_NAME.exe"
-cp "$ARGV_LICENSE" "$ARGV_OUTPUT/LICENSE"
-echo "$ARGV_VERSION" > "$ARGV_OUTPUT/version"
-rm -f "$ARGV_OUTPUT/resources/default_app.asar"
+./scripts/build/dependencies-npm-extract-addons.sh \
+  -d "$ARGV_NODE_MODULES" \
+  -o "$ARGV_OUTPUT/node_modules"
 
-./scripts/build/electron-brand-exe-win32.sh \
-  -f "$ARGV_OUTPUT/$ARGV_APPLICATION_NAME.exe" \
-  -n "$ARGV_APPLICATION_NAME" \
-  -d "$ARGV_APPLICATION_DESCRIPTION" \
-  -v "$ARGV_VERSION" \
-  -c "$ARGV_COPYRIGHT" \
-  -m "$ARGV_COMPANY_NAME" \
-  -i "$ARGV_ICON" \
-  -w "$ARGV_DOWNLOAD_DIRECTORY"
-
-upx -9 "$ARGV_OUTPUT/*.dll"
-
-cp "$ARGV_ASAR" "$ARGV_OUTPUT/resources/app.asar"
-
-if [ -d "$ARGV_ASAR.unpacked" ]; then
-  cp -rf "$ARGV_ASAR.unpacked" "$ARGV_OUTPUT/resources/app.asar.unpacked"
+APPLICATION_NAME_LOWERCASE="$(echo "$ARGV_APPLICATION_NAME" | tr '[:upper:]' '[:lower:]')"
+BINARY_LOCATION="$ARGV_OUTPUT/$APPLICATION_NAME_LOWERCASE"
+if [ "$ARGV_OPERATING_SYSTEM" == "win32" ]; then
+  BINARY_LOCATION="$BINARY_LOCATION.exe"
 fi
+
+./scripts/build/node-static-entry-point-download.sh \
+  -r "$ARGV_ARCHITECTURE" \
+  -v "1.0.1" \
+  -s "$ARGV_OPERATING_SYSTEM" \
+  -o "$BINARY_LOCATION"
+chmod +x "$BINARY_LOCATION"
+
+if [ "$ARGV_OPERATING_SYSTEM" == "win32" ]; then
+	./scripts/build/electron-brand-exe-win32.sh \
+		-f "$BINARY_LOCATION" \
+		-n "$ARGV_APPLICATION_NAME" \
+		-d "$ARGV_APPLICATION_DESCRIPTION" \
+		-v "$ARGV_VERSION" \
+		-c "$ARGV_COPYRIGHT" \
+		-m "$ARGV_COMPANY_NAME" \
+		-i "$ARGV_ICON" \
+		-w "$ARGV_DOWNLOAD_DIRECTORY"
+fi
+
+# Compressing the binary before branding it causes
+# weird execution errors on Windows
+upx -9 "$BINARY_LOCATION"

@@ -32,7 +32,7 @@ SECONDARY_VERSIONS=("devDependencies[\"angular-mocks\"]")
 function check_locked {
     name=$1
     version=$2
-    if [[ "$version" =~ ^\^ ]]; then
+    if [[ "$version" =~ "^\^" ]]; then
         echo "Dependency: $name must be version-locked in $PACKAGE_JSON"
         exit 1
     fi

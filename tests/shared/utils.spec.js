@@ -18,6 +18,9 @@
 
 const m = require('mochainon');
 const utils = require('../../lib/shared/utils');
+const path = require('path');
+const os = require('os');
+const _ = require('lodash');
 
 describe('Shared: Utils', function() {
 
@@ -120,6 +123,193 @@ describe('Shared: Utils', function() {
 
     it('should leave nested arrays nested', function() {
       m.chai.expect(utils.makeFlatStartCaseObject([ 1, 2, [ 3, 4 ] ])).to.deep.equal([ 1, 2, [ 3, 4 ] ]);
+    });
+
+  });
+
+  describe('hideObjectAbsolutePaths', function() {
+
+    it('should return undefined if given undefined', function() {
+      m.chai.expect(utils.hideObjectAbsolutePaths(undefined)).to.be.undefined;
+    });
+
+    it('should return null if given null', function() {
+      m.chai.expect(utils.hideObjectAbsolutePaths(null)).to.be.null;
+    });
+
+    it('should return a clone of the object if there are no paths in the object', function() {
+      const object = {
+        numberProperty: 1,
+        nested: {
+          otherProperty: 'value'
+        }
+      };
+      m.chai.expect(utils.hideObjectAbsolutePaths(object)).to.not.equal(object);
+      m.chai.expect(utils.hideObjectAbsolutePaths(object)).to.deep.equal(object);
+    });
+
+    describe('given UNIX paths', function() {
+
+      beforeEach(function() {
+        this.isAbsolute = path.isAbsolute;
+        this.basename = path.basename;
+        this.platform = os.platform;
+        path.isAbsolute = path.posix.isAbsolute;
+        path.basename = path.posix.basename;
+        os.platform = _.constant('linux');
+      });
+
+      afterEach(function() {
+        path.isAbsolute = this.isAbsolute;
+        path.basename = this.basename;
+        os.platform = this.platform;
+      });
+
+      it('should replace absolute paths with the basename', function() {
+        const object = {
+          prop1: 'some value',
+          prop2: '/home/john/rpi.img'
+        };
+
+        m.chai.expect(utils.hideObjectAbsolutePaths(object)).to.deep.equal({
+          prop1: 'some value',
+          prop2: 'rpi.img'
+        });
+
+      });
+
+      it('should replace nested absolute paths with the basename', function() {
+        const object = {
+          nested: {
+            path: '/home/john/rpi.img'
+          }
+        };
+
+        m.chai.expect(utils.hideObjectAbsolutePaths(object)).to.deep.equal({
+          nested: {
+            path: 'rpi.img'
+          }
+        });
+      });
+
+      it('should not alter /dev/sdb', function() {
+        const object = {
+          nested: {
+            path: '/dev/sdb'
+          }
+        };
+
+        m.chai.expect(utils.hideObjectAbsolutePaths(object)).to.deep.equal({
+          nested: {
+            path: '/dev/sdb'
+          }
+        });
+      });
+
+      it('should handle arrays', function() {
+        m.chai.expect(utils.hideObjectAbsolutePaths({
+          foo: 'foo',
+          bar: [ {
+            path: '/foo/bar/baz'
+          }, {
+            path: '/foo/bar/baz'
+          }, {
+            path: '/foo/bar/baz'
+          } ]
+        })).to.deep.equal({
+          foo: 'foo',
+          bar: [ {
+            path: 'baz'
+          }, {
+            path: 'baz'
+          }, {
+            path: 'baz'
+          } ]
+        });
+      });
+
+    });
+
+    describe('given Windows paths', function() {
+
+      beforeEach(function() {
+        this.isAbsolute = path.isAbsolute;
+        this.basename = path.basename;
+        this.platform = os.platform;
+        path.isAbsolute = path.win32.isAbsolute;
+        path.basename = path.win32.basename;
+        os.platform = _.constant('win32');
+      });
+
+      afterEach(function() {
+        path.isAbsolute = this.isAbsolute;
+        path.basename = this.basename;
+        os.platform = this.platform;
+      });
+
+      it('should replace absolute paths with the basename', function() {
+        const object = {
+          prop1: 'some value',
+          prop2: 'C:\\Users\\John\\rpi.img'
+        };
+
+        m.chai.expect(utils.hideObjectAbsolutePaths(object)).to.deep.equal({
+          prop1: 'some value',
+          prop2: 'rpi.img'
+        });
+
+      });
+
+      it('should replace nested absolute paths with the basename', function() {
+        const object = {
+          nested: {
+            path: 'C:\\Users\\John\\rpi.img'
+          }
+        };
+
+        m.chai.expect(utils.hideObjectAbsolutePaths(object)).to.deep.equal({
+          nested: {
+            path: 'rpi.img'
+          }
+        });
+      });
+
+      it('should not alter \\\\.\\PHYSICALDRIVE1', function() {
+        const object = {
+          nested: {
+            path: '\\\\.\\PHYSICALDRIVE1'
+          }
+        };
+
+        m.chai.expect(utils.hideObjectAbsolutePaths(object)).to.deep.equal({
+          nested: {
+            path: '\\\\.\\PHYSICALDRIVE1'
+          }
+        });
+      });
+
+      it('should handle arrays', function() {
+        m.chai.expect(utils.hideObjectAbsolutePaths({
+          foo: 'foo',
+          bar: [ {
+            path: 'C:\\foo\\bar\\baz'
+          }, {
+            path: 'C:\\foo\\bar\\baz'
+          }, {
+            path: 'C:\\foo\\bar\\baz'
+          } ]
+        })).to.deep.equal({
+          foo: 'foo',
+          bar: [ {
+            path: 'baz'
+          }, {
+            path: 'baz'
+          }, {
+            path: 'baz'
+          } ]
+        });
+      });
+
     });
 
   });
